@@ -1,0 +1,33 @@
+parameters:
+  - name: baseImage
+    type: string
+    displayName: "Base image for application"
+
+steps:
+  - task: Bash@3
+    displayName: Determine build image
+    inputs:
+      targetType: 'inline'
+      script: |
+        case ${BASE_IMAGE} in
+            tomcat)
+                IMAGE="ghcr.io/artazar/container-images/tomcat:6104263736"
+                ;;
+            tomcat-ffmpeg)
+                IMAGE="ghcr.io/artazar/container-images/tomcat-ffmpeg:6104263736"
+                ;;
+            nodejs)
+                IMAGE="node:16-alpine"
+                ;;
+            nginx)
+                IMAGE="nginx:1.21-alpine"
+                ;;
+            *)
+                echo "WARN: Base image is not defined"
+                ;;
+        esac
+
+        echo "##vso[task.setvariable variable=BUILD_BASE_IMAGE]${IMAGE}"
+        echo "Build image is set to ${IMAGE}"
+    env:
+      BASE_IMAGE: ${{ parameters.baseImage }}

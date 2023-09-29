@@ -1,0 +1,25 @@
+name: Demo pipeline
+
+trigger: none
+
+pr: none
+
+# Runtime parameters available in UI
+parameters:
+- name: pushArtifact
+  displayName: 'Push generated artifact?'
+  type: boolean
+  default: true
+
+resources:
+  repositories:
+  # Repository with CI templates
+  - repository: templates
+    type: github
+    name: artazar/azure-pipeline-templates
+    endpoint: github.rw
+
+extends:
+  template: azure-pipelines/pipelines/demo.yaml@templates
+  parameters:
+    pushArtifact: ${{ parameters.pushArtifact }}

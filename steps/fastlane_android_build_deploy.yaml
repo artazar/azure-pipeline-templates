@@ -1,0 +1,100 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+    displayName: "The subdirectory relative to repository root where project is located"
+  - name: fastlanePath
+    type: string
+    displayName: "The fastlane definition files location"
+  - name: bundlePath
+    type: string
+    displayName: "The bundler cache files location"
+  - name: jdkVersion
+    type: string
+    displayName: "JDK version to use for the project"
+  - name: githubId
+    type: string
+    displayName: "The GitHub ID to use for dependent packages"
+  - name: githubPackagesToken
+    type: string
+    displayName: "The GitHub Token to use for dependent packages"
+  - name: googlePackageName
+    type: string
+    displayName: "Google Play package name (App name)"
+  - name: googlePackageTrack
+    type: string
+    displayName: "Google Play track name"
+  - name: googlePackageReleaseStatus
+    type: string
+    displayName: "Google Play release status"
+    default: "completed"
+  - name: gradleBuildTasks
+    type: string
+  - name: signingKeyAlias
+    type: string
+    displayName: "Signing Key Store key alias"
+  - name: signingStorePassword
+    type: string
+    displayName: "Signing Store password"
+  - name: signingKeyPassword
+    type: string
+    displayName: "Signing Key password"
+
+steps:
+  - task: Bash@3
+    displayName: Prepare fastlane files
+    inputs:
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      targetType: 'inline'
+      script: |
+        cp -r "${FASTLANE_PATH}" fastlane
+        bundle update
+    env:
+      FASTLANE_PATH: ${{ parameters.fastlanePath }}
+      BUNDLE_GEMFILE: ./fastlane/Gemfile
+      BUNDLE_PATH: ${{ parameters.bundlePath }}
+      BUNDLE_CACHE_PATH: ${{ parameters.bundlePath }}
+
+  - task: Bash@3
+    displayName: Pick target JDK version
+    inputs:
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      targetType: 'inline'
+      script: |
+        if [ "$JDK_VERSION" = "1.17" ]
+        then
+          export JAVA_HOME=${JAVA_HOME_17_X64}
+        elif [ "$JDK_VERSION" = "1.11" ]
+        then
+          export JAVA_HOME=${JAVA_HOME_11_X64}
+        elif [ "$JDK_VERSION" = "1.8" ]
+        then
+          export JAVA_HOME=${JAVA_HOME_8_X64}
+        fi
+        echo "JAVA_HOME is ${JAVA_HOME}"
+        ${JAVA_HOME}/bin/java --version
+        echo "##vso[task.prependpath]${JAVA_HOME}/bin"
+    env:
+      JDK_VERSION: ${{ parameters.jdkVersion }}
+
+  - task: Bash@3
+    displayName: Build & deploy Android App to Google Play
+    inputs:
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      targetType: 'inline'
+      ${{ if in( variables['Build.SourceBranch'], 'refs/heads/release', 'refs/heads/main' ) }}:
+        script: bundle exec fastlane android build_and_deploy
+      ${{ else }}:
+        script: bundle exec fastlane android build
+    env:
+      GITHUB_ID: ${{ parameters.githubId }}
+      GITHUB_PACKAGES_TOKEN: ${{ parameters.githubPackagesToken }}
+      GRADLE_BUILD_TASKS: ${{ parameters.gradleBuildTasks }}
+      GOOGLE_PACKAGE_NAME: ${{ parameters.googlePackageName }}
+      GOOGLE_PACKAGE_TRACK: ${{ parameters.googlePackageTrack }}
+      GOOGLE_PACKAGE_RELEASE_STATUS: ${{ parameters.googlePackageReleaseStatus }}
+      SIGNING_KEY_ALIAS: ${{ parameters.signingKeyAlias }}
+      SIGNING_STORE_PASSWORD: ${{ parameters.signingStorePassword }}
+      SIGNING_KEY_PASSWORD: ${{ parameters.signingKeyPassword }}
+      BUNDLE_GEMFILE: ./fastlane/Gemfile
+      BUNDLE_PATH: ${{ parameters.bundlePath }}
+      BUNDLE_CACHE_PATH: ${{ parameters.bundlePath }}

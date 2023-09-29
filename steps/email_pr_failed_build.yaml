@@ -1,0 +1,82 @@
+parameters:
+  - name: fromEmailAddress
+    type: string
+  - name: smtpServer
+    type: string
+  - name: smtpPort
+    type: string
+  - name: smtpUsername
+    type: string
+  - name: smtpPassword
+    type: string
+
+steps:
+
+  - task: Bash@3
+    displayName: Get commit author
+    inputs:
+      targetType: 'inline'
+      script: |
+        AUTHOR=`git log -1 --pretty=format:'%ae'`
+        echo "last commiter: $AUTHOR"
+        echo "##vso[task.setvariable variable=AUTHOR]${AUTHOR}"
+
+  - task: Bash@3
+    displayName: URL-encode project variable
+    inputs:
+      targetType: 'inline'
+      script: |
+        PROJECT=$(printf "${SYSTEM_PROJECT}" | jq -Rr '@uri')
+        echo "project: $PROJECT"
+        echo "##vso[task.setvariable variable=PROJECT]${PROJECT}"
+    env:
+      SYSTEM_PROJECT: $(System.TeamProject)
+
+  - task: Bash@3
+    displayName: Send email
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        if [ ${SYSTEM_DEBUG,,} = "true" ]
+        then
+          set -x
+        fi
+
+        echo "MAIL_HOST ${MAIL_HOST}"
+        echo "MAIL_PORT ${MAIL_PORT}"
+        echo "MAIL_USERNAME ${MAIL_USERNAME}"
+        cat << EOF > email.eml
+        From: <${MAIL_FROM_ADDRESS}>
+        To: <${MAIL_TO_ADDRESS}>
+        Subject: PR check failed
+
+        Hello from Azure Pipelines!
+
+        This is a PR build failure notification.
+
+        Link to PR:
+        ${PR_URI}
+
+        Link to build logs:
+        ${BUILD_LOGS_URI}
+
+        EOF
+
+        cat email.eml
+
+        curl -v  --ssl-reqd --tlsv1.2 --tls-max 1.2 \
+          --url "smtp://${MAIL_HOST}:${MAIL_PORT}" \
+          --user "${MAIL_USERNAME}:${MAIL_PASSWORD}" \
+          --mail-from "${MAIL_FROM_ADDRESS}" \
+          --mail-rcpt ${MAIL_TO_ADDRESS} \
+          --upload-file email.eml
+    env:
+      MAIL_FROM_ADDRESS: ${{ parameters.fromEmailAddress }}
+      MAIL_TO_ADDRESS: $(AUTHOR)
+      MAIL_HOST: ${{ parameters.smtpServer }}
+      MAIL_PORT: ${{ parameters.smtpPort }}
+      MAIL_USERNAME: ${{ parameters.smtpUsername }}
+      MAIL_PASSWORD: ${{ parameters.smtpPassword }}
+      PR_URI: "$(Build.Repository.Uri)/pull/$(System.PullRequest.PullRequestNumber)"
+      BUILD_LOGS_URI: "$(System.TeamFoundationCollectionUri)/$(PROJECT)/_build/results?buildId=$(Build.BuildId)&view=logs"

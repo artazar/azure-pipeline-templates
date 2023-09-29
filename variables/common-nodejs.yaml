@@ -1,0 +1,7 @@
+variables:
+  - name: nodeVersion
+    value: 16.x
+  - name: nodePackageManager
+    value: npm
+  - name: envFilePath
+    value: '.env.example'

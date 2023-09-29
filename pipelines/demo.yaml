@@ -1,0 +1,19 @@
+parameters:
+- name: pushArtifact
+  displayName: 'Push generated artifact?'
+  type: boolean
+  default: true
+
+stages:
+  - stage: Demo
+    jobs:
+      - job: demo
+        displayName: Demo
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+        - bash: echo "This is build version ${VERSION}"
+          env:
+            VERSION: $(Build.BuildId)
+        - ${{ if parameters.pushArtifact }}:
+          - bash: echo "This step is executed if pushArtifact is True"

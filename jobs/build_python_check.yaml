@@ -1,0 +1,42 @@
+parameters:
+  - name: pythonVersion
+    type: string
+  - name: projectSubdirectory
+    type: string
+
+jobs:
+  - job: PythonPR
+    displayName: Python PR checks
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - checkout: self
+        displayName: Checkout Repo
+
+      - task: UsePythonVersion@0
+        displayName: Set up Python
+        inputs:
+          versionSpec: '${{ parameters.pythonVersion }}'
+          addToPath: true
+          architecture: 'x64'
+
+      - task: Bash@3
+        displayName: Install dependencies
+        inputs:
+          workingDirectory: ${{ parameters.projectSubdirectory }}
+          targetType: 'inline'
+          script: |
+            pip install -r requirements.txt
+
+      - task: Bash@3
+        displayName: Run Linter
+        inputs:
+          workingDirectory: ${{ parameters.projectSubdirectory }}
+          targetType: 'inline'
+          script: |
+            for file in $(find . -type f -name "*.py")
+            do
+              echo "Linting $file ..."
+              echo "------------------------------------"
+              pylint $file
+            done

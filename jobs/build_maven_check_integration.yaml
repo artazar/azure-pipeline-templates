@@ -1,0 +1,47 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+  - name: jdkVersion
+    type: string
+  - name: dbName
+    type: string
+  - name: dbUser
+    type: string
+  - name: dbPass
+    type: string
+
+jobs:
+  - job: MavenPRIntegration
+    dependsOn: []
+    displayName: Java PR integration tests
+    pool:
+      vmImage: ubuntu-latest
+    services:
+      mongodb: mongodb
+      minio: minio
+    variables:
+      MONGO_DB_URI: mongodb://${{ parameters.dbUser}}:{{ parameters.dbPass }}@mongodb/${{ parameters.dbName }}
+    steps:
+      - task: MavenAuthenticate@0
+        inputs:
+          mavenServiceConnections: maven-github
+
+      - task: Cache@2
+        inputs:
+          key: 'maven | "$(Agent.OS)" | **/pom.xml'
+          restoreKeys: |
+            maven | "$(Agent.OS)"
+            maven
+          path: $(MAVEN_CACHE_FOLDER)
+        displayName: Maven - cache dependencies
+
+      - task: Maven@4
+        displayName: Maven - run integration tests
+        inputs:
+          mavenPomFile: '${{ parameters.projectSubdirectory }}/pom.xml'
+          mavenOptions: '-Xmx3072m $(MAVEN_CACHE_OPTS)'
+          javaHomeOption: 'JDKVersion'
+          jdkVersionOption: '${{ parameters.jdkVersion }}'
+          publishJUnitResults: true
+          testResultsFiles: '**/TEST-*.xml'
+          goals: 'clean install -Pintegration'

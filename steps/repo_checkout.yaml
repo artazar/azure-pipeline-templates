@@ -1,0 +1,100 @@
+parameters:
+  - name: self
+    type: boolean
+    default: true
+
+  - name: fetchDepth
+    type: number
+    default: 0
+
+  - name: templates
+    type: boolean
+    default: false
+
+  - name: persist_credentials
+    type: boolean
+    default: false
+
+  # Check out submodules, possible values:
+  # - false       # no checkout
+  # - true        # check out first-level submodules, bound to particular commit per .gitmodules defintions
+  # - latest      # check out first-level submodules and fetch all recent submodule commits
+  # - recursive   # check out submodules and submodules of submodules, recursively
+  - name: submodules
+    type: string
+    default: false
+
+  - name: git_org
+    type: string
+    default: artazar
+
+steps:
+  # w/a to avoid random 400 errors on git fetch
+  - bash: git config --global http.extraHeader && git config --global --unset http.extraHeader || true
+    displayName: Clear git extra header
+
+  # https://github.com/MicrosoftDocs/vsts-docs/issues/6895
+  - ${{ if parameters.self }}:
+    - checkout: self
+      path: s
+      clean: true
+      fetchDepth: ${{ parameters.fetchDepth }}
+      # Allow subsequent git commands to run authenticated
+      persistCredentials: ${{ parameters.persist_credentials }}
+
+  - ${{ if parameters.templates }}:
+    - checkout: templates
+      path: templates
+      clean: true
+      fetchDepth: 1
+      # Allow subsequent git commands to run authenticated
+      persistCredentials: ${{ parameters.persist_credentials }}
+
+  - ${{ if parameters.persist_credentials }}:
+    - bash: |
+        set -euo pipefail
+
+        # In case we ever need to modify repos
+        git config --global user.email 'azure-pipelines@example.com'
+        git config --global user.name 'Azure Pipelines'
+
+        # Set global auth header for this repo's origin url.
+        # Unfortunately, it looks like we can't force Git to do _exact_ match,
+        # so this header will be applied to all other URLs.
+        # See matching rules here:
+        # https://git-scm.com/docs/git-config#Documentation/git-config.txt-httplturlgt
+        git config --global --add http.extraheader "$(git config http."$(git config remote.origin.url)".extraheader)"
+
+        # Use HTTPS instead of Git protocol in origins for auth headers set above to work.
+        git config --global url.'https://git@github.com/'${GIT_ORG}'.insteadOf' git@github.com:${GIT_ORG}
+      displayName: Persist git credentials
+      env:
+        GIT_ORG: ${{ parameters.git_org }}
+
+  - bash: |
+      echo "Git config - global:"
+      echo "--------------------"
+      git config --global -l
+      echo "Git config - local:"
+      echo "-------------------"
+      git config -l
+    displayName: Show git configuration
+
+  - ${{ if ne(parameters.submodules, 'false') }}:
+    - bash: |
+        set -euxo pipefail
+        git submodule sync
+        ARGS=(--init --checkout --force)
+        case $MODE in
+          "recursive")
+            ARGS+=(--recursive)
+            ;;
+          "latest")
+            ARGS+=(--remote)
+            ;;
+        esac
+        git submodule update "${ARGS[@]}"
+      workingDirectory: $(Pipeline.Workspace)/s
+      displayName: Checkout submodules
+      env:
+        MODE: ${{ parameters.submodules }}

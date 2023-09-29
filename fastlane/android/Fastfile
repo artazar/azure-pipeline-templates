@@ -1,0 +1,81 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+opt_out_usage              # don't send usage report
+
+ensure_env_vars(
+  env_vars: ['GOOGLE_PACKAGE_NAME', 'GOOGLE_PACKAGE_TRACK', 'GOOGLE_PACKAGE_RELEASE_STATUS', 'GRADLE_BUILD_TASKS', 'GITHUB_ID', 'GITHUB_PACKAGES_TOKEN']
+)
+
+default_platform(:android)
+
+platform :android do
+
+  ENV['SUPPLY_UPLOAD_MAX_RETRIES']='5'   # https://github.com/fastlane/fastlane/issues/21507
+
+  # desc "Runs all the tests"
+  # lane :test do
+  #   gradle(task: "test")
+  # end
+
+  desc "List all version codes"
+  lane :list_version_codes do
+    google_play_track_version_codes(
+      package_name: ENV["GOOGLE_PACKAGE_NAME"],
+      track: ENV["GOOGLE_PACKAGE_TRACK"]
+    )
+  end
+
+  desc "Fetch current version from Google Play"
+  lane :fetch_and_increment_build_number do
+    latest_build_number = google_play_track_version_codes(
+      package_name: ENV["GOOGLE_PACKAGE_NAME"],
+      track: ENV["GOOGLE_PACKAGE_TRACK"]
+    )[0]
+    increment_version_code(
+      version_code: (latest_build_number + 1)
+    )
+  end
+
+  desc "Build the application"
+  lane :build do
+     gradle(
+      task: ENV["GRADLE_BUILD_TASKS"]
+    )
+  end
+
+  desc "Deploy a new version to the Google Play"
+  lane :deploy do
+    upload_to_play_store(
+      root_url: "https://androidpublisher.googleapis.com/",
+      package_name: ENV["GOOGLE_PACKAGE_NAME"],
+      track: ENV["GOOGLE_PACKAGE_TRACK"],
+      release_status: ENV["GOOGLE_PACKAGE_RELEASE_STATUS"],
+      mapping_paths: lane_context[SharedValues::GRADLE_ALL_MAPPING_TXT_OUTPUT_PATHS],
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Build & deploy Android App to Google Play"
+  lane :build_and_deploy do
+    fetch_and_increment_build_number
+    build
+    deploy
+  end
+end

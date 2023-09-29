@@ -1,0 +1,27 @@
+parameters:
+  - name: pushArtifact
+    type: boolean
+    default: true
+
+jobs:
+  - job: Demo
+    displayName: Demo steps
+    #pool: Default
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - template: ../steps/demo.yaml@templates
+        parameters:
+          pushArtifact: ${{ parameters.pushArtifact }}
+      - ${{ if parameters.pushArtifact }}:
+        - task: Bash@3
+          displayName: Conditional step
+          inputs:
+            targetType: 'inline'
+            script: echo This steps runs when pushArtifact is true.
+      - ${{ else }}:
+        - task: Bash@3
+          displayName: Conditional step
+          inputs:
+            targetType: 'inline'
+            script: echo This steps runs when pushArtifact is false.

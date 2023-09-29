@@ -1,0 +1,63 @@
+parameters:
+  - name: javaVersion
+    type: string
+    displayName: "Version of JDK to run builds on"
+  - name: projectSubdirectory
+    type: string
+    displayName: "The subdirectory relative to repository root where project is located"
+  - name: sonarqubeServiceConnection
+    type: string
+    displayName: "SonarQube service connection"
+  - name: sonarqubeScannerMode
+    type: string
+    displayName: "SonarQube scanner mode"
+    default: Other   # If not MSBuild/CLI, then it's Other
+
+steps:
+  # # Prepare Analysis Configuration task
+  # - task: SonarQubePrepare@5
+  #   condition: eq(variables['Build.Reason'], 'PullRequest')
+  #   inputs:
+  #     SonarQube: '${{ parameters.sonarqubeServiceConnection }}'
+  #     scannerMode: '${{ parameters.sonarqubeScannerMode }}'
+
+  # - task: Bash@3
+  #   condition: eq(variables['Build.Reason'], 'PullRequest')
+  #   displayName: Filter out non-CE sonar parameters
+  #   inputs:
+  #     targetType: 'inline'
+  #     workingDirectory: ${{ parameters.projectSubdirectory }}
+  #     script: |
+  #       FILTERED_PARAMS=$(echo $SONARQUBE_SCANNER_PARAMS | sed 's/"sonar.branch.name":"[^"]*"\,//g'  | sed 's/"sonar.pullrequest.key":"[^"]*"\,//g' | sed 's/"sonar.pullrequest.branch":"[^"]*"\,//g' | sed 's/"sonar.pullrequest.base":"[^"]*"\,//g')
+  #       echo "##vso[task.setvariable variable=SONARQUBE_SCANNER_PARAMS]$FILTERED_PARAMS"
+
+  - task: Maven@4
+    displayName: Maven - build the application
+    inputs:
+      mavenPomFile: '${{ parameters.projectSubdirectory }}/pom.xml'
+      mavenOptions: '-Xmx3072m $(MAVEN_CACHE_OPTS)'
+      javaHomeOption: 'JDKVersion'
+      jdkVersionOption: '${{ parameters.javaVersion }}'
+      publishJUnitResults: true
+      testResultsFiles: '**/TEST-*.xml'
+      goals: 'package'
+      codeCoverageTool: JaCoCo
+      ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+        sonarQubeRunAnalysis: false
+        isJacocoCoverageReportXML: true
+
+  # # Publish Quality Gate Result task
+  # - task: SonarQubePublish@5
+  #   condition: eq(variables['Build.Reason'], 'PullRequest')
+  #   inputs:
+  #     pollingTimeoutSec: '300'
+
+  - task: Bash@3
+    displayName: Check the built files
+    inputs:
+      targetType: 'inline'
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      script: |
+        ls -la
+        ls -la target/
+        find . -type f -name *war*

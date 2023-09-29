@@ -1,0 +1,19 @@
+steps:
+  - task: Bash@3
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    displayName: Shorten the commit hash
+    name: short_sha
+    inputs:
+      targetType: 'inline'
+      script: |
+        if [ "${COMMIT_SHA}" != "" ]
+        then
+          COMMIT_SHA_SHORT=${COMMIT_SHA:0:8}
+        else
+          echo "Error: No commit sha available"
+          exit 1
+        fi
+        echo "Shortened commit sha is ${COMMIT_SHA_SHORT}"
+        echo "##vso[task.setvariable variable=SHORT_SHA;isOutput=true;]${COMMIT_SHA_SHORT}"
+    env:
+      COMMIT_SHA: $(Build.SourceVersion)

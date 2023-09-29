@@ -1,0 +1,31 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+  - name: minioBucket
+    type: string
+    displayName: "Target MinIO bucket"
+  - name: uploadFileS3Path
+    type: string
+    displayName: "Upload file path at MinIO bucket"
+  - name: fileName
+    type: string
+    displayName: "File name"
+
+steps:
+  - task: Bash@3
+    name: shared_url
+    displayName: Share a file from minio
+    inputs:
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      targetType: 'inline'
+      script: |
+        echo "Will run mc command:"
+        echo "mc --config-dir /tmp share download ci/${MINIO_BUCKET}/${UPLOAD_FILE_S3_PATH}/${FILE_NAME} --json | jq -r '.share'"
+        SHARED_URL=$(./mc --config-dir /tmp share download ci/${MINIO_BUCKET}/${UPLOAD_FILE_S3_PATH}/${FILE_NAME} --json | jq -r '.share')
+        echo "Shared URL is ${SHARED_URL}"
+        echo "##vso[task.setvariable variable=SHARED_URL]${SHARED_URL}"
+        echo "##vso[task.setvariable variable=SHARED_URL;isOutput=true;]${SHARED_URL}"
+    env:
+      MINIO_BUCKET: ${{ parameters.minioBucket }}
+      UPLOAD_FILE_S3_PATH: ${{ parameters.uploadFileS3Path }}
+      FILE_NAME: ${{ parameters.fileName }}

@@ -1,0 +1,11 @@
+variables:
+  # - name: jdkVersion   # set on per-project basis now
+  #   value: 1.11
+  - name: rubyVersion
+    value: 3.2.2
+  - name: bundlePath
+    value: /azp/tools/Ruby/.gems
+  - name: fastlanePath
+    value: "$(Pipeline.Workspace)/templates/azure-pipelines/fastlane/android"
+  - name: agentToolsDirectory
+    value: /azp/tools

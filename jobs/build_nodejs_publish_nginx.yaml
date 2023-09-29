@@ -1,0 +1,80 @@
+parameters:
+  - name: nodeVersion
+    type: string
+  - name: nodePackageManager
+    type: string
+  - name: projectSubdirectory
+    type: string
+  - name: envFilePath
+    type: string
+  - name: releaseBranch
+    type: string
+  - name: baseImage
+    type: string
+  - name: gitversionImageVersion
+    type: string
+  - name: containerRegistry
+    type: string
+  - name: containerImageName
+    type: string
+  - name: push
+    type: boolean
+  - name: scan
+    type: boolean
+  - name: test
+    type: boolean
+  - name: sign
+    type: boolean
+  - name: cosignImageVersion
+    type: string
+  - name: cosignKey
+    type: string
+  - name: cosignKeyPassword
+    type: string
+
+jobs:
+  - job: NodeJS
+    displayName: Build NodeJS application
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - checkout: self
+        displayName: Checkout Repo
+        fetchDepth: 0
+        persistCredentials: true
+
+      - template: ../steps/short_sha.yaml@templates
+
+      - template: ../steps/gitversion.yaml@templates
+        parameters:
+          gitversionImageVersion: ${{ parameters.gitversionImageVersion }}
+          releaseBranch: ${{ parameters.releaseBranch }}
+
+      - template: ../steps/generic_build_variables.yaml@templates
+        parameters:
+          baseImage: ${{ parameters.baseImage }}
+
+      - template: ../steps/nodejs.yaml@templates
+        parameters:
+          projectSubdirectory: ${{ parameters.projectSubdirectory }}
+          nginxImage: $(BUILD_BASE_IMAGE)
+          envFilePath: ${{ parameters.envFilePath }}
+          nodeVersion: ${{ parameters.nodeVersion }}
+          nodePackageManager: ${{ parameters.nodePackageManager }}
+
+      - template: ../steps/docker.yaml@templates
+        parameters:
+          projectSubdirectory: ${{ parameters.projectSubdirectory }}
+          containerRegistry: ${{ parameters.containerRegistry }}
+          containerImageName: ${{ parameters.containerImageName }}
+          ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+            containerTags:
+          ${{ else }}:
+            containerTags: $(IMAGETAG)
+          push: ${{ parameters.push }}
+          scan: ${{ parameters.scan }}
+          test: ${{ parameters.test }}
+          sign: ${{ parameters.sign }}
+          cosignImageVersion: ${{ parameters.cosignImageVersion }}
+          cosignKey: ${{ parameters.cosignKey }}
+          cosignKeyPassword: ${{ parameters.cosignKeyPassword }}

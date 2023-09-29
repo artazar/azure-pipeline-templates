@@ -1,0 +1,70 @@
+parameters:
+  - name: projectName
+    type: string
+    displayName: "Project name that also represents the subdirectory relative to repository root"
+  - name: xCodeVersion
+    type: string
+    displayName: "xCode version for the project"
+  - name: certificateSecureFileName
+    type: string
+    displayName: "Signing certificate secure file name"
+  - name: certificatePassword
+    type: string
+    displayName: "Signing certificate password"
+
+steps:
+  - bash: |
+      wget -q https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+      sudo security add-trusted-cert -d -r trustRoot -k /Users/runner/Library/Keychains/login.keychain-db AppleWWDRCAG3.cer
+      rm -f AppleWWDRCAG3.cer
+    displayName: Install Apple WWDR certificate
+
+  - task: InstallAppleCertificate@2
+    inputs:
+      certSecureFile: ${{ parameters.certificateSecureFileName }}
+      certPwd: ${{ parameters.certificatePassword }}
+
+  - task: Cache@2
+    displayName: Cache - CocoaPods
+    inputs:
+      key: 'pods | "$(Agent.OS)" | ${{ parameters.projectName }}/Podfile.lock'
+      restoreKeys:
+        pods | "$(Agent.OS)"
+        pods
+      path: '${{ parameters.projectName }}/Pods'
+      cacheHitVar: 'PODS_CACHE_RESTORED'
+
+  - task: InstallSSHKey@0
+    inputs:
+      knownHostsEntry: $(UNITY_SSH_KNOWN_HOSTS_ENTRY)
+      sshPublicKey: $(UNITY_SSH_PUBLIC_KEY)
+      sshKeySecureFile: unityFramework.rsa
+      addEntryToConfig: true
+      configHostAlias: unityFramework
+      configHostname: github.com
+      configUser: git
+
+  - task: InstallSSHKey@0
+    inputs:
+      knownHostsEntry: $(IOS_CORE_SSH_KNOWN_HOSTS_ENTRY)
+      sshPublicKey: $(IOS_CORE_SSH_PUBLIC_KEY)
+      sshKeySecureFile: iosCore.rsa
+      addEntryToConfig: true
+      configHostAlias: iosCore
+      configHostname: github.com
+      configUser: git
+
+  - task: CocoaPods@0
+    displayName: Restore dependency pods
+    condition: ne(variables.PODS_CACHE_RESTORED, 'true')
+    inputs:
+      workingDirectory: ${{ parameters.projectName }}
+
+  # Use specific xcode version
+  - bash: |
+      sudo xcode-select -p
+      sudo xcode-select -s /Applications/Xcode_${XCODE_VERSION}.app
+      sudo xcode-select -p
+    displayName: Selects a specific version of Xcode
+    env:
+      XCODE_VERSION: ${{ parameters.xCodeVersion }}

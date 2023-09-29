@@ -1,0 +1,26 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+    displayName: "Path of download files at MinIO bucket"
+  - name: s3Url
+    type: string
+  - name: S3AccessKey
+    type: string
+  - name: s3SecretKey
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: Set up minio configuration
+    inputs:
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      targetType: 'inline'
+      script: |
+        wget -q https://dl.min.io/client/mc/release/linux-amd64/mc
+        chmod +x mc
+        ./mc --config-dir /tmp alias set ci "${S3_URL}" "${S3_ACCESS_KEY}" "${S3_SECRET_KEY}"
+        ./mc --config-dir /tmp alias list ci
+    env:
+      S3_URL: ${{ parameters.s3Url }}
+      S3_ACCESS_KEY: ${{ parameters.s3AccessKey }}
+      S3_SECRET_KEY: ${{ parameters.s3SecretKey }}

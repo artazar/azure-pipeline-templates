@@ -1,0 +1,91 @@
+parameters:
+  - name: fromEmailAddress
+    type: string
+  - name: toEmailAddress
+    type: string
+  - name: smtpServer
+    type: string
+  - name: smtpPort
+    type: string
+  - name: smtpUsername
+    type: string
+  - name: smtpPassword
+    type: string
+  - name: packageName
+    type: string
+  - name: packageDownloadUrl
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: Send email
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        if [ ${SYSTEM_DEBUG,,} = "true" ]
+        then
+          set -x
+        fi
+
+        echo "MAIL_HOST ${MAIL_HOST}"
+        echo "MAIL_PORT ${MAIL_PORT}"
+        echo "MAIL_USERNAME ${MAIL_USERNAME}"
+        cat << EOF > email.eml
+        From: <${MAIL_FROM_ADDRESS}>
+        To: <${MAIL_TO_ADDRESS}>
+        Subject: New APK build for ${BUILD_DEFINITIONNAME} - ${BUILD_BUILDID}
+        Content-Type: text/html; charset="utf-8"
+
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <!-- Add icon library -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+        <style>
+        .btn {
+          background-color: DodgerBlue;
+          border: none;
+          color: white;
+          padding: 12px 30px;
+          cursor: pointer;
+          font-size: 20px;
+        }
+        /* Darker background on mouse-over */
+        .btn:hover {
+          background-color: RoyalBlue;
+        }
+        </style>
+        </head>
+        <body>
+        <h2>New version of ${PACKAGE_NAME} apk is available:</h2>
+        <a href="${PACKAGE_DOWNLOAD_URL}" download>
+          <button class="btn"><i class="fa fa-download"></i>Download</button>
+        </a>
+        </body>
+        </html>
+        EOF
+
+        cat email.eml
+
+        MAIL_RCPT=""
+        for rcpt in $(echo $MAIL_TO_ADDRESS|sed "s|,| |g")
+        do
+          MAIL_RCPT="${MAIL_RCPT} --mail-rcpt $rcpt"
+        done
+
+        eval curl -v  --ssl-reqd --tlsv1.2 --tls-max 1.2 \
+          --url "smtp://${MAIL_HOST}:${MAIL_PORT}" \
+          --user "${MAIL_USERNAME}:${MAIL_PASSWORD}" \
+          --mail-from "${MAIL_FROM_ADDRESS}" \
+          ${MAIL_RCPT} \
+          --upload-file email.eml
+    env:
+      MAIL_FROM_ADDRESS: ${{ parameters.fromEmailAddress }}
+      MAIL_TO_ADDRESS: ${{ parameters.toEmailAddress }}
+      MAIL_HOST: ${{ parameters.smtpServer }}
+      MAIL_PORT: ${{ parameters.smtpPort }}
+      MAIL_USERNAME: ${{ parameters.smtpUsername }}
+      MAIL_PASSWORD: ${{ parameters.smtpPassword }}
+      PACKAGE_NAME: ${{ parameters.packageName }}
+      PACKAGE_DOWNLOAD_URL: ${{ parameters.packageDownloadUrl }}

@@ -1,0 +1,36 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+  - name: jdkVersion
+    type: string
+
+jobs:
+  - job: MavenPR
+    displayName: Java PR checks
+    dependsOn: []
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: MavenAuthenticate@0
+        inputs:
+          mavenServiceConnections: maven-github
+
+      - task: Cache@2
+        inputs:
+          key: 'maven | "$(Agent.OS)" | **/pom.xml'
+          restoreKeys: |
+            maven | "$(Agent.OS)"
+            maven
+          path: $(MAVEN_CACHE_FOLDER)
+        displayName: Maven - cache dependencies
+
+      - task: Maven@4
+        displayName: Maven - run code style checks
+        inputs:
+          mavenPomFile: '${{ parameters.projectSubdirectory }}/pom.xml'
+          mavenOptions: '-Xmx3072m $(MAVEN_CACHE_OPTS)'
+          javaHomeOption: 'JDKVersion'
+          jdkVersionOption: '${{ parameters.jdkVersion }}'
+          publishJUnitResults: true
+          testResultsFiles: '**/TEST-*.xml'
+          goals: 'clean install -Pstyle'

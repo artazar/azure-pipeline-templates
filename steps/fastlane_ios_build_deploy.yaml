@@ -1,0 +1,78 @@
+parameters:
+  - name: projectName
+    type: string
+    displayName: "The subdirectory relative to repository root where project is located"
+  - name: appIdentifier
+    type: string
+    displayName: "The identifier for the published application"
+  - name: gspFilePath
+    displayName: Google Service Info file path
+    type: string
+  - name: fastlanePath
+    type: string
+    displayName: "The fastlane definition files location"
+  - name: bundlePath
+    type: string
+    displayName: "The bundler cache files location"
+  - name: appleKeyId
+    type: string
+    displayName: "Signing Key ID"
+  - name: appleKeyIssuerId
+    type: string
+    displayName: "Signing Key Issuer ID"
+  - name: appleKey
+    type: string
+    displayName: "Signing Key"
+  - name: appleTeamId
+    type: string
+    displayName: "Apple Team ID"
+
+steps:
+  - task: Bash@3
+    displayName: Prepare fastlane files
+    inputs:
+      workingDirectory: ${{ parameters.projectName }}
+      targetType: 'inline'
+      script: |
+        cp -R "${FASTLANE_PATH}" fastlane
+        bundle update
+    env:
+      FASTLANE_PATH: ${{ parameters.fastlanePath }}
+      BUNDLE_GEMFILE: ./fastlane/Gemfile
+      BUNDLE_PATH: ${{ parameters.bundlePath }}
+      BUNDLE_CACHE_PATH: ${{ parameters.bundlePath }}
+
+  - task: Bash@3
+    displayName: Build application and upload to TestFlight
+    inputs:
+      workingDirectory: ${{ parameters.projectName }}
+      targetType: 'inline'
+      ${{ if in( variables['Build.SourceBranch'], 'refs/heads/release', 'refs/heads/main' ) }}:
+        script: bundle exec fastlane ios build_upload_testflight
+      ${{ else }}:
+        script: bundle exec fastlane ios build --verbose
+    env:
+      APP_IDENTIFIER: ${{ parameters.appIdentifier }}
+      ASC_TARGET_NAME: ${{ parameters.projectName }}
+      ASC_KEY_ID: ${{ parameters.appleKeyId }}
+      ASC_ISSUER_ID: ${{ parameters.appleKeyIssuerId }}
+      ASC_PRIVATE_KEY: ${{ parameters.appleKey }}
+      ASC_TEAM_ID: ${{ parameters.appleTeamId }}
+      KEYCHAIN_PATH: /Users/runner/work/_temp/ios_signing_temp.keychain   # default keychain store path from InstallAppleCertificate task
+      GSP_PATH: ${{ parameters.gspFilePath }}
+      ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+        APP_BUILD_PROFILE: Production
+      ${{ else }}:
+        APP_BUILD_PROFILE: Staging
+      BUNDLE_GEMFILE: ./fastlane/Gemfile
+      BUNDLE_PATH: ${{ parameters.bundlePath }}
+      BUNDLE_CACHE_PATH: ${{ parameters.bundlePath }}
+
+  - ${{ if in( variables['Build.SourceBranch'], 'refs/heads/release', 'refs/heads/main' ) }}:
+    - bash: |
+        find ~/Library/Developer/Xcode/Archives -name "*.dSYM"
+        find ~/Library/Developer/Xcode/Archives -name "*.dSYM" | xargs -I \{\} ${UPLOAD_SCRIPT_PATH} -gsp ${GSP_PATH} -p ios \{\}
+      displayName: Upload DSYM files to CrashAnalytics
+      env:
+        GSP_PATH: ${{ parameters.gspFilePath }}
+        UPLOAD_SCRIPT_PATH: ./${{ parameters.projectName }}/Pods/FirebaseCrashlytics/upload-symbols

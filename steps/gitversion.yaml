@@ -1,0 +1,59 @@
+parameters:
+  - name: gitversionImageVersion
+    type: string
+    displayName: "Version of GitVersion docker image to use"
+  - name: releaseBranch
+    type: string
+    displayName: "Branch to push tags for"
+    default: main
+
+steps:
+  - task: Bash@3
+    displayName: Generate version
+    condition: ne(variables['Build.Reason'], 'PullRequest')
+    name: appversion
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -euo pipefail
+        ### This is specific to using GitVersion with GitHub
+        ### 'develop' and 'main' branches if they exist need to be checked out explicitly prior to GitVersion run
+        git checkout develop || true
+        git checkout main || true
+        git checkout ${BUILD_SOURCE_BRANCH#"refs/heads/"}
+        docker run --rm -v "$(pwd):/repo" gittools/gitversion:${GITVERSION_IMAGE_VERSION} \
+          /nocache \
+          /nonormalize \
+          /verbosity Verbose \
+          /overrideconfig assembly-versioning-format='{Major}.{Minor}.{Patch}-{PreReleaseLabel}${ShortSha}' \
+          /targetpath /repo | tee /tmp/version
+        VERSION_LONG=$(jq -r '.AssemblySemVer' /tmp/version)
+        VERSION_SHORT=$(jq -r '.MajorMinorPatch' /tmp/version)
+        echo "Long Version is ${VERSION_LONG}"
+        echo "Short Version is ${VERSION_SHORT}"
+        if [ "${BUILD_SOURCE_BRANCH}" = "refs/heads/${RELEASE_BRANCH}" ]
+        then
+          echo "##vso[task.setvariable variable=IMAGETAG]${VERSION_SHORT}"
+          echo "Using ${VERSION_SHORT} version for the built artifacts"
+        else
+          echo "##vso[task.setvariable variable=IMAGETAG]${VERSION_LONG}"
+          echo "Using ${VERSION_LONG} version for the built artifacts"
+        fi
+    env:
+      GITVERSION_IMAGE_VERSION: ${{ parameters.gitversionImageVersion }}
+      BUILD_SOURCE_BRANCH: $(Build.SourceBranch)
+      RELEASE_BRANCH: ${{ parameters.releaseBranch }}
+
+  # NOTE: this step requires persistCredentials=true on the repo checkout step!
+  - task: Bash@3
+    condition: eq('${{ parameters.releaseBranch }}', variables['Build.SourceBranchName'])
+    displayName: Add tag to repository
+    inputs:
+      targetType: 'inline'
+      script: |
+        git config user.name "CI Bot"
+        git config user.email "<>"
+        git tag -a "v${TAG}" -m "Release tag from CI"
+        git push origin --tags
+    env:
+      TAG: $(IMAGETAG)

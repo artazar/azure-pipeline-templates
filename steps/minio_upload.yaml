@@ -1,0 +1,74 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+    displayName: "Path of download files at MinIO bucket"
+  - name: s3Url
+    type: string
+  - name: minioBucket
+    type: string
+    displayName: "Target MinIO bucket"
+  - name: uploadFileS3Path
+    type: string
+    displayName: "Upload file path at MinIO bucket"
+  - name: fileName
+    type: string
+    displayName: "File name"
+  - name: packageName
+    type: string
+    displayName: "Package name"
+    default: "foobar"
+  - name: packageVersion
+    type: string
+    displayName: "Package version"
+    default: "1.0"
+  - name: s3PublicUrl
+    type: string
+    displayName: "URL of the public access bucket"
+  - name: minioPublicBucket
+    type: string
+    displayName: "Target MinIO bucket with public access"
+  - name: uploadToPublicBucket
+    type: boolean
+    displayName: "Additionally upload to bucket with public access"
+    default: true
+
+steps:
+  - task: Bash@3
+    displayName: Upload file to minio
+    inputs:
+      workingDirectory: ${{ parameters.projectSubdirectory }}
+      targetType: 'inline'
+      script: |
+        echo "Will run mc command:"
+        echo "mc --config-dir /tmp cp ${FILE_NAME} ci/${MINIO_BUCKET}/${UPLOAD_FILE_S3_PATH}"
+        ./mc --config-dir /tmp cp ${FILE_NAME} ci/${MINIO_BUCKET}/${UPLOAD_FILE_S3_PATH}/${FILE_NAME}
+        echo "Uploaded file on S3 bucket:"
+        ./mc --config-dir /tmp ls ci/${MINIO_BUCKET}/${UPLOAD_FILE_S3_PATH}/${FILE_NAME}
+    env:
+      MINIO_BUCKET: ${{ parameters.minioBucket }}
+      UPLOAD_FILE_S3_PATH: ${{ parameters.uploadFileS3Path }}
+      FILE_NAME: ${{ parameters.fileName }}
+
+  - ${{ if parameters.uploadToPublicBucket }}:
+    - task: Bash@3
+      displayName: Upload file to minio for public access
+      inputs:
+        workingDirectory: ${{ parameters.projectSubdirectory }}
+        targetType: 'inline'
+        script: |
+          echo "Will run mc command:"
+          echo "mc --config-dir /tmp cp ${FILE_NAME} ci/${MINIO_BUCKET}/${PACKAGE_NAME}"
+          ./mc --config-dir /tmp cp ${FILE_NAME} ci/${MINIO_BUCKET}/${PACKAGE_NAME}
+          echo "Uploaded file on S3 bucket:"
+          ./mc --config-dir /tmp ls ci/${MINIO_BUCKET}/${PACKAGE_NAME}
+
+          echo "Updating version in index file"
+          ./mc --config-dir /tmp cp ci/${MINIO_BUCKET}/index.html index.html
+          sed -i -E "s|(<a href=\"${S3_URL}/${PACKAGE_NAME}\" .*\\(v. )[0-9]*(\).*)|\1${PACKAGE_VERSION}\2|" index.html
+          ./mc --config-dir /tmp cp index.html ci/${MINIO_BUCKET}/index.html
+      env:
+        S3_URL: ${{ parameters.s3PublicUrl }}
+        MINIO_BUCKET: ${{ parameters.minioPublicBucket }}
+        FILE_NAME: ${{ parameters.fileName }}
+        PACKAGE_NAME: ${{ parameters.packageName }}
+        PACKAGE_VERSION: ${{ parameters.packageVersion }}

@@ -1,0 +1,129 @@
+parameters:
+  - name: gitversionImageVersion
+    type: string
+  - name: containerRegistry
+    type: string
+  - name: containerImageName
+    type: string
+  - name: push
+    type: boolean
+  - name: projectSubdirectory
+    type: string
+  - name: releaseBranch
+    type: string
+  - name: scan
+    type: boolean
+  - name: test
+    type: boolean
+  - name: sign
+    type: boolean
+  - name: cosignImageVersion
+    type: string
+  - name: cosignKey
+    type: string
+  - name: cosignKeyPassword
+    type: string
+  - name: javaVersion
+    type: string
+  - name: tomcatRootContext
+    type: boolean
+  - name: baseImage
+    type: string
+  - name: sonarqubeServiceConnection
+    type: string
+
+jobs:
+  - job: Maven
+    displayName: Build Java application
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - checkout: self
+        displayName: Checkout Repo
+        fetchDepth: 0
+        persistCredentials: true
+
+      - template: ../steps/short_sha.yaml@templates
+
+      - template: ../steps/gitversion.yaml@templates
+        parameters:
+          gitversionImageVersion: ${{ parameters.gitversionImageVersion }}
+          releaseBranch: ${{ parameters.releaseBranch }}
+
+      - template: ../steps/generic_build_variables.yaml@templates
+        parameters:
+          baseImage: ${{ parameters.baseImage }}
+
+      - task: MavenAuthenticate@0
+        inputs:
+          mavenServiceConnections: maven-github
+
+      - task: Cache@2
+        inputs:
+          key: 'maven | "$(Agent.OS)" | **/pom.xml'
+          restoreKeys: |
+            maven | "$(Agent.OS)"
+            maven
+          path: $(MAVEN_CACHE_FOLDER)
+        displayName: Maven - cache dependencies
+
+      - template: ../steps/maven.yaml@templates
+        parameters:
+          javaVersion: ${{ parameters.javaVersion }}
+          projectSubdirectory: ${{ parameters.projectSubdirectory }}
+          sonarqubeServiceConnection: ${{ parameters.sonarqubeServiceConnection }}
+
+      - task: Bash@3
+        displayName: Create Dockerfile
+        inputs:
+          workingDirectory: ${{ parameters.projectSubdirectory }}
+          targetType: 'inline'
+          script: |
+            cat > Dockerfile <<EOF
+            FROM ${TOMCAT_IMAGE}
+            EOF
+            cat >> Dockerfile <<'EOF'
+            ARG WAIT_TIMEOUT
+            ARG PORT
+            ENV WAIT_TIMEOUT ${WAIT_TIMEOUT:-'60s'}
+            ENV PORT ${PORT:-8080}
+            RUN addgroup --gid 1000 www-group && adduser --system --disabled-password --gecos "" --gid 1000 --uid 1000 www-user
+            RUN chown -hR 1000:1000 ${CATALINA_HOME}
+            EXPOSE ${PORT}
+            EOF
+            if [ "${TOMCAT_ROOT_CTX,,}" = true ]; then
+            cat >> Dockerfile <<'EOF'
+            COPY --chown=1000:root target/*.war ${CATALINA_HOME}/webapps/ROOT.war
+            EOF
+            else
+            cat >> Dockerfile <<'EOF'
+            COPY --chown=1000:root target/*.war ${CATALINA_HOME}/webapps/
+            EOF
+            fi
+            cat >> Dockerfile <<'EOF'
+            USER 1000
+            CMD ["catalina.sh", "run"]
+            EOF
+            echo "Dockerfile final content:"
+            echo "-------------------------"
+            cat Dockerfile
+        env:
+          TOMCAT_ROOT_CTX: ${{ parameters.tomcatRootContext }}
+          TOMCAT_IMAGE: $(BUILD_BASE_IMAGE)
+
+      - template: ../steps/docker.yaml@templates
+        parameters:
+          containerRegistry: ${{ parameters.containerRegistry }}
+          containerImageName: ${{ parameters.containerImageName }}
+          ${{ if eq(variables['Build.Reason'], 'PullRequest') }}:
+            containerTags:
+          ${{ else }}:
+            containerTags: $(IMAGETAG)
+          push: ${{ parameters.push }}
+          projectSubdirectory: ${{ parameters.projectSubdirectory }}
+          scan: ${{ parameters.scan }}
+          test: ${{ parameters.test }}
+          sign: ${{ parameters.sign }}
+          cosignImageVersion: ${{ parameters.cosignImageVersion }}
+          cosignKey: ${{ parameters.cosignKey }}
+          cosignKeyPassword: ${{ parameters.cosignKeyPassword }}

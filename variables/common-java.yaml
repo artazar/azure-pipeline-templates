@@ -1,0 +1,10 @@
+variables:
+  - name: javaVersion
+    value: 1.11
+  - name: sonarqubeServiceConnection
+    value: sonarqube
+
+  - name: MAVEN_CACHE_FOLDER
+    value: $(Pipeline.Workspace)/.m2/repository
+  - name: MAVEN_CACHE_OPTS
+    value: '-Dmaven.repo.local=$(MAVEN_CACHE_FOLDER)'

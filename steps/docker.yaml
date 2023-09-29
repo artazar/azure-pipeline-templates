@@ -1,0 +1,159 @@
+parameters:
+  - name: dockerfile
+    type: string
+    default: "**/Dockerfile"
+    displayName: "The path to Dockerfile"
+  - name: buildContext
+    type: string
+    default: $(Build.SourcesDirectory)
+    displayName: "The build context"
+  - name: containerRegistry
+    type: string
+    displayName: "The container registry URL"
+  - name: containerImageName
+    type: string
+    displayName: "Custom container image name - repository name is used by default"
+  - name: containerTags
+    type: string
+    displayName: "The container tags to add to the built image"
+  - name: push
+    type: boolean
+    displayName: "True to push the image to the registry after building"
+  - name: projectSubdirectory
+    type: string
+    displayName: "The subdirectory to run the build from relative to the repository root"
+  - name: scan
+    type: boolean
+    displayName: "Enable container image scan for vulnerabilities (Trivy)"
+  - name: test
+    type: boolean
+    displayName: "Run container image build tests (Terratest), expects 'docker_test.go' to be located next to Dockerfile"
+  - name: sign
+    type: boolean
+    displayName: "Sign container image with cosign key"
+  - name: cosignImageVersion
+    type: string
+    displayName: "Cosign tool image version"
+  - name: cosignKey
+    type: string
+    displayName: "Cosign private key provided in base64 format"
+  - name: cosignKeyPassword
+    type: string
+    displayName: "Cosign private key password"
+
+steps:
+  - task: Docker@2
+    displayName: Login to registry
+    inputs:
+      command: login
+      containerRegistry: ${{ parameters.containerRegistry }}
+
+  - task: Bash@3
+    displayName: Set container image name
+    name: setconrainername
+    inputs:
+      targetType: "inline"
+      script: |
+        if [ "${INPUT_NAME}" = "" ]
+        then
+          IMAGE_NAME="${REPO_NAME}"
+        else
+          IMAGE_NAME="${REPO_NAME}/${INPUT_NAME}"
+        fi
+        echo "##vso[task.setvariable variable=IMAGENAME]${IMAGE_NAME}"
+        echo "Setting image name to ${IMAGE_NAME}"
+    env:
+      REPO_NAME: $(Build.Repository.Name)
+      INPUT_NAME: ${{ parameters.containerImageName }}
+
+  - task: Bash@3
+    displayName: Get single image tag
+    name: image_lower
+    inputs:
+      targetType: "inline"
+      script: |
+        IMAGE_TAG=$(echo $TAGS|head -1|cut -d' ' -f1)
+        echo "Setting image tag to ${IMAGE_TAG}"
+        echo "##vso[task.setvariable variable=IMAGETAG]${IMAGE_TAG}"
+        echo "Setting full image tag to ${IMAGE_FULL_NAME}:${IMAGE_TAG}"
+        IMAGE_LOWER=$(echo "$IMAGE_FULL_NAME" | tr [:upper:] [:lower:])
+        echo "Lower image name ${IMAGE_LOWER}"
+        echo "##vso[task.setvariable variable=IMAGELOWER;isOutput=true;]${IMAGE_LOWER}"
+        echo "##vso[task.setvariable variable=IMAGELOWER]${IMAGE_LOWER}"
+        echo "##vso[task.setvariable variable=IMAGETAGFULL]${IMAGELOWER}:${IMAGE_TAG}"
+    env:
+      TAGS: ${{ parameters.containerTags }}
+      IMAGE_FULL_NAME: ghcr.io/$(IMAGENAME)
+
+  - task: Docker@2
+    displayName: Build and push an image to container registry
+    name: docker
+    inputs:
+      Dockerfile: ${{ parameters.dockerfile }}
+      buildContext: ${{ parameters.buildContext }}
+      containerRegistry: ${{ parameters.containerRegistry }}
+      ${{ if parameters.push }}:
+        command: "buildAndPush"
+      ${{ else }}:
+        command: "build"
+      repository: $(IMAGENAME)
+      tags: |
+        $(Build.BuildId)
+        $(Build.SourceBranchName)
+        ${{ parameters.containerTags }}
+    env:
+      DOCKER_BUILDKIT: 1
+
+  - task: Bash@3
+    displayName: Get DockerOutput
+    name: image_digest
+    inputs:
+      targetType: "inline"
+      script: |
+        ls -la ${DOCKER_OUTPUT}
+        cat ${DOCKER_OUTPUT} | grep digest: | grep sha256: > DockerOutput.txt
+        awk '{print $3}' DockerOutput.txt > Digest.txt
+        DIGEST=$(cat Digest.txt | head -n1 | tail -n1)
+        echo "##vso[task.setvariable variable=APPVERSION;isOutput=true;]${IMAGETAG}@${DIGEST}"
+        echo "##vso[task.setvariable variable=APPVERSION]${IMAGETAG}@${DIGEST}"
+        echo "Using ${IMAGETAG}@${DIGEST}"
+    env:
+      DOCKER_OUTPUT: $(docker.DockerOutput)
+
+  - ${{ if eq(parameters.sign, 'true') }}:
+      - task: Bash@3
+        displayName: Sign the image
+        inputs:
+          targetType: "inline"
+          script: |
+            set -euxo pipefail
+            echo "${COSIGN_KEY}" | base64 -d > cosign.key
+            wget -q "https://github.com/sigstore/cosign/releases/download/v2.0.0/cosign-linux-amd64"
+            mv ./cosign-linux-amd64 ./cosign
+            chmod +x ./cosign
+            ./cosign sign --key cosign.key --yes "${IMAGE}"
+        env:
+          COSIGN_IMAGE_VERSION: ${{ parameters.cosignImageVersion }}
+          COSIGN_KEY: ${{ parameters.cosignKey }}
+          COSIGN_PASSWORD: ${{ parameters.cosignKeyPassword }}
+          IMAGE: $(IMAGELOWER):$(APPVERSION)
+
+  #- task: Docker@2
+  #  displayName: Login to container registry
+  #  inputs:
+  #    command: login
+  #    containerRegistry: ${{ parameters.containerRegistry }}
+
+  #- task: trivy@1
+  #  inputs:
+  #    image: $(IMAGETAGFULL)
+  #    docker: false
+
+  #- task: GoTool@0
+  #  inputs:
+  #    version: '1.13.5'
+  #- task: Go@0
+  #  inputs:
+  #    command: 'test'
+  #    arguments: '-v'
+  #    workingDirectory: '$(parameters.projectSubdirectory)'

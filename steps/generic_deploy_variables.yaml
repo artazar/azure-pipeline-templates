@@ -1,0 +1,55 @@
+parameters:
+  - name: appGroup
+    type: string
+    displayName: "Application group name"
+  - name: deployFromBranch
+    type: string
+  - name: deployFromBranchEnv
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: Determine cluster name and namespace inside of it
+    inputs:
+      targetType: 'inline'
+      script: |
+        if [ "${APP_GROUP}" = 'demoapp' ]
+        then
+            CLUSTER="demo-001"
+            if [ "${DEPLOY_FROM_BRANCH}" = 'no' ]
+            then
+              case ${BUILD_SOURCEBRANCH} in
+                  refs/heads/main)
+                      NAMESPACE="demoapp-prod"
+                      ;;
+                  refs/heads/develop)
+                      NAMESPACE="demoapp-dev"
+                      ;;
+                  refs/heads/stage)
+                      NAMESPACE="demoapp-stg"
+                      ;;
+                  *)
+                      echo "WARN: The current branch is not deployed automatically"
+                      exit 1
+                      ;;
+              esac
+            else
+              NAMESPACE="demoapp-${DEPLOY_FROM_BRANCH_ENV}"
+            fi
+        elif [ "${APP_GROUP}" = 'test' ]
+        then
+            CLUSTER="test-001"
+            NAMESPACE="test"
+        else
+            echo "WARN: App group is not defined"
+        fi
+
+        echo "##vso[task.setvariable variable=CLUSTER]${CLUSTER}"
+        echo "Cluster is set to ${CLUSTER}"
+
+        echo "##vso[task.setvariable variable=NAMESPACE]${NAMESPACE}"
+        echo "Namespace is set to ${NAMESPACE}"
+    env:
+      APP_GROUP: ${{ parameters.appGroup }}
+      DEPLOY_FROM_BRANCH: ${{ parameters.deployFromBranch }}
+      DEPLOY_FROM_BRANCH_ENV: ${{ parameters.deployFromBranchEnv }}

@@ -1,0 +1,52 @@
+parameters:
+  - name: appVersion
+    type: string
+  - name: appGroup
+    type: string
+  - name: appImage
+    type: string
+  - name: appName
+    type: string
+  - name: clusterEndpoint
+    type: string
+  - name: clusterRepoBranch
+    type: string
+  - name: deployFromBranch
+    type: string
+  - name: deployFromBranchEnv
+    type: string
+  - name: useInClusterAgent
+    type: boolean
+  - name: inClusterAgentPool
+    type: string
+
+jobs:
+  - job: Kubernetes
+    displayName: Deploy to Kubernetes cluster
+    ${{ if parameters.useInClusterAgent }}:
+      pool: ${{ parameters.inClusterAgentPool }}
+    ${{ else }}:
+      pool:
+        vmImage: ubuntu-latest
+    steps:
+      - checkout: kubernetes_cluster
+        displayName: Checkout Kubernetes repo
+        persistCredentials: true
+        clean: true
+
+      - template: ../steps/generic_deploy_variables.yaml@templates
+        parameters:
+          appGroup: ${{ parameters.appGroup }}
+          deployFromBranch: ${{ parameters.deployFromBranch }}
+          deployFromBranchEnv: ${{ parameters.deployFromBranchEnv }}
+
+      - template: ../steps/deploy_kubernetes.yaml@templates
+        parameters:
+          appVersion: ${{ parameters.appVersion }}
+          appImage: ${{ parameters.appImage }}
+          appName: ${{ parameters.appName }}
+          namespace: $(NAMESPACE)   # defined on previous step
+          cluster: $(CLUSTER)   # defined on previous step
+          clusterEndpoint: ${{ parameters.clusterEndpoint }}
+          clusterRepoBranch: ${{ parameters.clusterRepoBranch }}
+          useInClusterAgent: ${{ parameters.useInClusterAgent }}

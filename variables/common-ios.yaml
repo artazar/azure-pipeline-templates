@@ -1,0 +1,11 @@
+variables:
+  - name: rubyVersion
+    value: 3.2.3
+  - name: bundlePath
+    value: $(Pipeline.Workspace)/.bundle
+  - name: fastlanePath
+    value: "$(Pipeline.Workspace)/templates/azure-pipelines/fastlane/ios"
+  - name: certificateSecureFileName
+    value: 'ios_dist.p12'
+  - name: agentToolsDirectory
+    value: $(Agent.ToolsDirectory)

@@ -1,0 +1,199 @@
+parameters:
+  - name: appName
+    type: string
+    displayName: "Application name to be deployed"
+  - name: appImage
+    type: string
+    displayName: "Application image to be deployed"
+  - name: appVersion
+    type: string
+    displayName: "Application version to be deployed"
+  - name: namespace
+    type: string
+    displayName: "The namespace to deploy to, expected format: <app_group>-<environment>"
+  - name: cluster
+    type: string
+    displayName: "The cluster to deploy to"
+  - name: clusterEndpoint
+    type: string
+    displayName: "The service connection to use for cluster"
+  - name: clusterRepoBranch
+    type: string
+    displayName: "The branch of Kubernetes cluster repository to make commits to"
+  - name: useInClusterAgent
+    type: boolean
+    displayName: "Use in-cluster deployment agent"
+
+steps:
+  - task: Bash@3
+    displayName: Update application version
+    inputs:
+      targetType: 'inline'
+      script: |
+        if [ ${SYSTEM_DEBUG,,} = "true" ]
+        then
+          set -x
+        fi
+
+        yq --version
+
+        # namespace should be named as <APP_GROUP>-<ENV>, e.g myapp-dev
+        export APP_GROUP=$(echo $NAMESPACE | cut -d- -f1)
+        export ENV=$(echo $NAMESPACE | cut -d- -f2-)
+        export APP_KS_PATH=kubernetes/clusters/${CLUSTER}/apps/${APP_GROUP}/${ENV}/kustomization.yaml
+
+        echo 'Working with kustomization file:'
+        ls ${APP_KS_PATH}
+        echo "Image repo is ${APP_IMAGE}"
+        echo "New app version is ${APP_VERSION}"
+
+        echo 'Before changes:'
+        yq '.images[] | select(.name == env(APP_IMAGE))' ${APP_KS_PATH}
+
+        # set the image version with single quotes:
+        # https://mikefarah.gitbook.io/yq/operators/style#update-and-set-style-of-a-particular-node-using-path-variables
+        yq -i 'with((.images[] | select(.name == env(APP_IMAGE))).newTag ; . = env(APP_VERSION) | . style="single")' ${APP_KS_PATH}
+
+        echo 'After changes:'
+        yq '.images[] | select(.name == env(APP_IMAGE))' ${APP_KS_PATH}
+
+        # Make a git commit
+        git switch
+        git config user.name "CI Bot"
+        git config user.email "<>"
+        git status
+        git blame ${APP_KS_PATH}
+        git add ${APP_KS_PATH}
+        git commit -m "Update $APP_NAME to version $APP_VERSION at $NAMESPACE namespace" && \
+          SHA=$(git rev-parse HEAD) && \
+          echo "##vso[task.setvariable variable=COMMITSHA]${SHA}"
+        git status
+        git pull origin ${CLUSTER_REPO_BRANCH} --rebase -X theirs
+        git push origin HEAD:${CLUSTER_REPO_BRANCH}
+
+    env:
+      NAMESPACE: ${{ parameters.namespace }}
+      CLUSTER: ${{ parameters.cluster }}
+      CLUSTER_REPO_BRANCH: ${{ parameters.clusterRepoBranch }}
+      APP_NAME: ${{ parameters.appName }}
+      APP_IMAGE: ${{ parameters.appImage }}
+      APP_VERSION: ${{ parameters.appVersion }}
+
+  - ${{ if not(parameters.useInClusterAgent) }}:
+    - task: Kubernetes@1
+      displayName: Kubernetes - login to cluster
+      inputs:
+        connectionType: 'Kubernetes Service Connection'
+        kubernetesServiceEndpoint: ${{ parameters.clusterEndpoint }}
+        command: login
+
+  - task: Bash@3
+    displayName: Kubernetes - check deployment status
+    inputs:
+      targetType: 'inline'
+      script: |
+        set -u
+        if [ ${SYSTEM_DEBUG,,} = "true" ]
+        then
+          set -x
+        fi
+
+        kubectl get deployment ${APP_NAME} -n ${NAMESPACE} >/dev/null 2>&1 && IS_DEPLOYMENT=1 || IS_DEPLOYMENT=0
+        ## Workaround: since job update is an in-place replacement, there's a possible race condition, when the job is removed,
+        ## but we check if it exists, so let's do it few times in a row to be sure
+        for i in {0..10}; do sleep 1; kubectl get job ${APP_NAME} -n ${NAMESPACE} >/dev/null 2>&1 && break; done && IS_JOB=1 || IS_JOB=0
+
+        i=0
+        while [ $i -lt 30 ]
+        do
+          if [ $IS_DEPLOYMENT -eq 1 ]
+          then
+            echo "Checking ${APP_NAME} deployment status..."
+            kubectl rollout status deployment ${APP_NAME} -n ${NAMESPACE} --watch --timeout=10m >/dev/null
+            if [ $? -eq 0 ]
+            then
+              CURRENT_IMAGE=$(kubectl get deploy ${APP_NAME} -n ${NAMESPACE} -o jsonpath='{.spec.template.spec.containers[?(@.name=="'${APP_NAME}'")].image}' | cut -d: -f2-)
+              if [ "${CURRENT_IMAGE}" == "${APP_VERSION}" ]
+              then
+                echo "${APP_NAME} has been updated to ${APP_VERSION%%@*} version"
+                exit 0
+              else
+                echo "New version has not arrived yet, waiting 10 seconds..."
+                sleep 10
+                i=$((i+1))
+              fi
+            else
+              echo "The deployment did not end successfully, fetching the logs..."
+              kubectl logs deployment/${APP_NAME} --tail=300 -n ${NAMESPACE}
+              exit 1
+            fi
+          elif [ $IS_JOB -eq 1 ]
+          then
+            echo "Checking ${APP_NAME} job status..."
+            kubectl wait --for=condition=complete job/${APP_NAME} -n ${NAMESPACE} --timeout=5m
+            if [ $? -eq 0 ]
+            then
+              CURRENT_IMAGE=$(kubectl get job ${APP_NAME} -n ${NAMESPACE} -o jsonpath='{.spec.template.spec.containers[?(@.name=="'${APP_NAME}'")].image}' | cut -d: -f2-)
+              if [ "${CURRENT_IMAGE}" == "${APP_VERSION}" ]
+              then
+                echo "${APP_NAME} has been updated to ${APP_VERSION%%@*} version"
+                exit 0
+              fi
+            else
+              kubectl get job ${APP_NAME} -n ${NAMESPACE} >/dev/null 2>&1
+              if [ $? -eq 0 ]
+              then
+                echo "The deployment did not end successfully, fetching the logs..."
+                kubectl logs job/${APP_NAME} --tail=300 -n ${NAMESPACE}
+                exit 1
+              fi
+            fi
+            echo "New version has not arrived yet, waiting 10 seconds..."
+            sleep 10
+            i=$((i+1))
+          else
+            echo "There is no application ${APP_NAME} deployed in namespace ${NAMESPACE}"
+            exit 1
+          fi
+        done
+        echo "ERROR: Timeout reached waiting for the new deployment version"
+        if [ $IS_DEPLOYMENT -eq 1 ]
+        then
+          kubectl logs deployment/${APP_NAME} --tail=300 -n ${NAMESPACE}
+        elif [ $IS_JOB -eq 1 ]
+        then
+          kubectl logs job/${APP_NAME} --tail=300 -n ${NAMESPACE}
+        fi
+        exit 1
+    env:
+      NAMESPACE: ${{ parameters.namespace }}
+      APP_NAME: ${{ parameters.appName }}
+      APP_VERSION: ${{ parameters.appVersion }}
+
+  - ${{ if not(parameters.useInClusterAgent) }}:
+    # To clean up all k8s auth data on build agent
+    - task: Kubernetes@1
+      displayName: Kubernetes - logout from cluster
+      inputs:
+        connectionType: 'Kubernetes Service Connection'
+        kubernetesServiceEndpoint: ${{ parameters.clusterEndpoint }}
+        command: logout
+
+  - task: Bash@3
+    displayName: Revert the changes if reconciliation fails
+    condition: failed()
+    inputs:
+      targetType: 'inline'
+      script: |
+        # Revert the git commit
+        git config user.name "CI Bot"
+        git config user.email "<>"
+        git pull origin HEAD:${CLUSTER_REPO_BRANCH}
+        git status
+        git revert ${GIT_COMMIT} --no-edit
+        git status
+        git pull origin ${CLUSTER_REPO_BRANCH} --rebase
+        git push origin HEAD:${CLUSTER_REPO_BRANCH}
+    env:
+      GIT_COMMIT: $(COMMITSHA)
+      CLUSTER_REPO_BRANCH: ${{ parameters.clusterRepoBranch }}

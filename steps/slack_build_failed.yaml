@@ -1,0 +1,88 @@
+parameters:
+  - name: slackUrlSuffix
+    type: string
+
+steps:
+  - task: InvokeRESTAPI@1
+    condition: ne(variables['Build.Reason'], 'PullRequest')
+    displayName: Send build failure alert to Slack
+    inputs:
+      connectionType: 'connectedServiceName'
+      serviceConnection: 'Slack'
+      method: 'POST'
+      body: |
+        {
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "Build for *$(Build.DefinitionName)* failed"
+              }
+            },
+            {
+              "type": "divider"
+            },
+            {
+              "type": "section",
+              "text": {
+                  "type": "mrkdwn",
+                  "text": "<$(System.CollectionUri)/DevOps/_build/results?buildId=$(Build.BuildId)|*Build Logs*>"
+              },
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "Commit: <$(Build.Repository.Uri)/commit/$(Build.SourceVersion)|*$(SHASHORT)*>"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "Commit author: *$(Build.RequestedFor)*"
+                }
+              ]
+            }
+          ]
+        }
+      urlSuffix: ${{ parameters.slackUrlSuffix }}
+      waitForCompletion: 'false'
+
+  - task: InvokeRESTAPI@1
+    condition: eq(variables['Build.Reason'], 'PullRequest')
+    displayName: Send PR failure alert to Slack
+    inputs:
+      connectionType: 'connectedServiceName'
+      serviceConnection: 'Slack'
+      method: 'POST'
+      body: |
+        {
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "PR checks for *$(Build.DefinitionName)* failed"
+              }
+            },
+            {
+              "type": "divider"
+            },
+            {
+              "type": "section",
+              "text": {
+                  "type": "mrkdwn",
+                  "text": "<$(System.CollectionUri)/DevOps/_build/results?buildId=$(System.DefinitionId)|*Build Logs*>"
+              },
+              "fields": [
+                {
+                  "type": "mrkdwn",
+                  "text": "Pull Request <$(System.PullRequest.SourceRepositoryURI)|$(System.PullRequest.PullRequestNumber)>"
+                },
+                {
+                  "type": "mrkdwn",
+                  "text": "PR author: *$(Build.RequestedFor)*"
+                }
+              ]
+            }
+          ]
+        }
+      urlSuffix: ${{ parameters.slackUrlSuffix }}
+      waitForCompletion: 'false'

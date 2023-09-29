@@ -1,0 +1,24 @@
+parameters:
+  - name: pushArtifact
+    type: boolean
+    default: true
+
+steps:
+  - task: Bash@3
+    displayName: Demo templated step
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo Foo is ${{ variables.foo }}.   # This is rendered on pipeline launch.
+        echo Version is ${VERSION}.         # This is handled during script execution, using environment variables.
+        echo Group Foo is ${GROUPFOO}.      # This is for variable obtained from Variable Group
+    env:
+      VERSION: ${{ variables.demoVersion }}
+      GROUPFOO: ${{ variables.groupFoo }}
+
+  - task: Bash@3
+    condition: ${{ eq(parameters.pushArtifact, 'true') }}
+    displayName: Conditional templated step
+    inputs:
+      targetType: 'inline'
+      script: echo This steps runs when pushArtifact is true.

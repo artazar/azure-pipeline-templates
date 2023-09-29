@@ -1,0 +1,20 @@
+---
+extends: default
+
+rules:
+  # Don't check line length
+  line-length: disable
+
+  # Don't check space lengths inside brackets
+  brackets: disable
+
+  # accept both     key:
+  #                   - item
+  #
+  # and             key:
+  #                 - item
+  indentation:
+    indent-sequences: whatever
+
+ignore: |
+  .pre-commit-config.yaml

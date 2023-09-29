@@ -1,0 +1,55 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+  - name: jdkVersion
+    type: string
+  - name: dbKind
+    type: string
+  - name: dbName
+    type: string
+  - name: dbUser
+    type: string
+  - name: dbPass
+    type: string
+
+jobs:
+  - job: MavenDBMigration
+    dependsOn: []
+    displayName: Java DB migration tests
+    pool:
+      vmImage: ubuntu-latest
+    ${{ if eq(parameters.dbKind, 'postgres') }}:
+      services:
+        postgres: postgres
+      variables:
+        POSTGRES_DB_URI: jdbc:postgresql://localhost/${{ parameters.dbName }}
+        POSTGRES_DB_USERNAME: ${{ parameters.dbUser}}
+        POSTGRES_DB_PASSWORD: ${{ parameters.dbPass }}
+    ${{ if eq(parameters.dbKind, 'mongodb') }}:
+      services:
+        mongodb: mongodb
+      variables:
+        MONGO_DB_URI: mongodb://${{ parameters.dbUser}}:{{ parameters.dbPass }}@localhost/${{ parameters.dbName }}
+    steps:
+      - task: MavenAuthenticate@0
+        inputs:
+          mavenServiceConnections: maven-github
+
+      - task: Cache@2
+        inputs:
+          key: 'maven | "$(Agent.OS)" | **/pom.xml'
+          restoreKeys: |
+            maven | "$(Agent.OS)"
+            maven
+          path: $(MAVEN_CACHE_FOLDER)
+        displayName: Maven - cache dependencies
+
+      - task: Maven@4
+        displayName: Maven - run db migration tests
+        inputs:
+          mavenPomFile: '${{ parameters.projectSubdirectory }}/pom.xml'
+          mavenOptions: '-Xmx3072m $(MAVEN_CACHE_OPTS)'
+          javaHomeOption: 'JDKVersion'
+          jdkVersionOption: '${{ parameters.jdkVersion }}'
+          publishJUnitResults: false
+          goals: 'clean spring-boot:run'

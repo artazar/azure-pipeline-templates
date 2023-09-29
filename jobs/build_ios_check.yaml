@@ -1,0 +1,21 @@
+parameters:
+  - name: projectName
+    type: string
+
+jobs:
+  - job: iOSPR
+    displayName: iOS PR checks
+    pool:
+      vmImage: macOS-12
+
+    workspace:
+      clean: all
+
+    steps:
+    - checkout: self
+      fetchDepth: 1
+      clean: true
+
+    - bash: swiftlint
+      displayName: Run SwiftLint
+      workingDirectory: ${{ parameters.projectName }}

@@ -1,0 +1,11 @@
+variables:
+  - name: containerRegistry
+    value: ghcr.rw
+  - name: gitversionImageVersion
+    value: '5.10.1-alpine.3.14-6.0'
+  - name: cosignImageVersion
+    value: '1.13.1'
+  - name: k8sClusterEndpoint
+    value: 'k8s.demo'
+  - name: k8sClusterAgentPool
+    value: 'demo-001'

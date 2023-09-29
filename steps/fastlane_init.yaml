@@ -1,0 +1,42 @@
+parameters:
+  - name: rubyVersion
+    type: string
+  - name: fastlanePath
+    type: string
+  - name: bundlePath
+    type: string
+  - name: agentToolsDirectory
+    type: string
+
+steps:
+  - task: UseRubyVersion@0
+    inputs:
+      rubyVersion: '${{ parameters.rubyVersion }}'
+    env:
+      AGENT_TOOLSDIRECTORY: $(agentToolsDirectory)
+
+  - bash: gem environment
+    displayName: Show ruby gem env configuration
+    workingDirectory: ${{ parameters.fastlanePath }}
+
+  - task: Cache@2
+    displayName: Cache - Ruby Gems
+    inputs:
+      key: 'gems | "$(Agent.OS)" | ${{ parameters.fastlanePath }}/Gemfile.lock'
+      restoreKeys:
+        gems | "$(Agent.OS)"
+        gems
+      path: ${{ parameters.bundlePath }}
+
+  - task: Bash@3
+    displayName: Restore dependencies
+    inputs:
+      workingDirectory: ${{ parameters.fastlanePath }}
+      targetType: 'inline'
+      script: |
+        bundle env
+        bundle config
+        bundle install
+    env:
+      BUNDLE_PATH: ${{ parameters.bundlePath }}
+      BUNDLE_CACHE_PATH: ${{ parameters.bundlePath }}

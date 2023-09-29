@@ -1,0 +1,70 @@
+parameters:
+  - name: projectName
+    type: string
+  - name: appIdentifier
+    type: string
+  - name: gspFilePath
+    type: string
+  - name: rubyVersion
+    type: string
+  - name: bundlePath
+    type: string
+  - name: fastlanePath
+    type: string
+  - name: agentToolsDirectory
+    type: string
+  - name: xCodeVersion
+    type: string
+  - name: certificateSecureFileName
+    type: string
+  - name: certificatePassword
+    type: string
+  - name: appleKeyId
+    type: string
+  - name: appleKeyIssuerId
+    type: string
+  - name: appleKey
+    type: string
+  - name: appleTeamId
+    type: string
+
+jobs:
+  - job: iOSBuild
+    displayName: iOS build
+    pool:
+      vmImage: macOS-13
+
+    workspace:
+      clean: all
+
+    steps:
+    - template: ../steps/repo_checkout.yaml@templates
+      parameters:
+        templates: true
+        fetchDepth: 1
+
+    - template: ../steps/xcode_init.yaml@templates
+      parameters:
+        xCodeVersion: ${{ parameters.xCodeVersion }}
+        projectName: ${{ parameters.projectName }}
+        certificateSecureFileName: ${{ parameters.certificateSecureFileName }}
+        certificatePassword: ${{ parameters.certificatePassword }}
+
+    - template: ../steps/fastlane_init.yaml@templates
+      parameters:
+        fastlanePath: ${{ parameters.fastlanePath }}
+        rubyVersion: ${{ parameters.rubyVersion }}
+        bundlePath: ${{ parameters.bundlePath }}
+        agentToolsDirectory: $(agentToolsDirectory)
+
+    - template: ../steps/fastlane_ios_build_deploy.yaml@templates
+      parameters:
+        projectName: ${{ parameters.projectName }}
+        fastlanePath: ${{ parameters.fastlanePath }}
+        bundlePath: ${{ parameters.bundlePath }}
+        appIdentifier: ${{ parameters.appIdentifier }}
+        gspFilePath: ${{ parameters.gspFilePath }}
+        appleKeyId: ${{ parameters.appleKeyId }}
+        appleKeyIssuerId: ${{ parameters.appleKeyIssuerId }}
+        appleKey: ${{ parameters.appleKey }}
+        appleTeamId: ${{ parameters.appleTeamId }}

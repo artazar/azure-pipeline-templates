@@ -1,0 +1,30 @@
+parameters:
+  - name: jdkVersion
+    type: string
+  - name: projectSubdirectory
+    type: string
+
+jobs:
+  - job: AndroidPR
+    displayName: Android PR checks
+    pool: demo-build
+    variables:
+      - group: email
+    steps:
+      - template: ../steps/repo_checkout.yaml@templates
+        parameters:
+          templates: true
+          persist_credentials: true
+          submodules: true
+          fetchDepth: 1
+
+      - task: Gradle@2
+        inputs:
+          workingDirectory: '${{ parameters.projectSubdirectory }}'
+          gradleWrapperFile: 'gradlew'
+          gradleOptions: '-Xmx3072m'
+          javaHomeOption: 'JDKVersion'
+          jdkVersion: '${{ parameters.jdkVersion }}'
+          publishJUnitResults: true
+          testResultsFiles: '**/TEST-*.xml'
+          tasks: 'ktlint'

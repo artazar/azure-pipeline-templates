@@ -1,0 +1,52 @@
+parameters:
+- name: cancelPreviousBuilds
+  displayName: Cancel previous running builds
+  type: boolean
+  default: true
+- name: buildDefinitionName
+  displayName: Build definition name to cancel
+  type: string
+  default: $(Build.DefinitionName)
+- name: organizationUrl
+  displayName: URL of Azure DevOps organizationUrl
+  type: string
+  default: $(System.TeamFoundationCollectionUri)
+- name: projectName
+  displayName: Azure DevOps project name
+  type: string
+  default: $(System.TeamProject)
+- name: token
+  displayName: Azure DevOps project name
+  type: string
+  default: $(System.AccessToken)
+
+steps:
+  # Note: The task requires "Stop Builds" permissions for the system build user in Azure DevOps
+  - task: PowerShell@2
+    displayName: Сancel previous running builds
+    env:
+      AZURE_API_VERSION: 7.0
+      AZURE_ORGANIZATION_URL: ${{ parameters.organizationUrl }}
+      AZURE_PROJECT: ${{ parameters.projectName }}
+      AZURE_TOKEN: ${{ parameters.token }}
+      BUILD_DEFINITION_NAME: ${{ parameters.buildDefinitionName }}
+    inputs:
+      targetType: inline
+      script: |
+        $header = @{ Authorization = "Bearer ${env:AZURE_TOKEN}" }
+        $buildsUrl = "${env:AZURE_ORGANIZATION_URL}${env:AZURE_PROJECT}/_apis/build/builds?api-version=${env:AZURE_API_VERSION}"
+        Write-Host "GET $buildsUrl"
+        $builds = Invoke-RestMethod -Uri $buildsUrl -Method Get -Header $header
+        $buildsToStop = $builds.value.Where({
+          ($_.status -eq 'inProgress') -and
+          ($_.definition.name -eq "${env:BUILD_DEFINITION_NAME}") -and
+          ($_.id -lt ${env:BUILD_BUILDID}) -and
+          ($_.sourceBranch -eq "${env:BUILD_SOURCEBRANCH}")
+        })
+        ForEach($build in $buildsToStop)
+        {
+          $urlToCancel = "${env:AZURE_ORGANIZATION_URL}${env:AZURE_PROJECT}/_apis/build/builds/$($build.id)?api-version=${env:AZURE_API_VERSION}"
+          $body = @{ status = "cancelling" } | ConvertTo-Json
+          Write-Host "PATCH $urlToCancel"
+          Invoke-RestMethod -Uri $urlToCancel -Method Patch -Header $header -ContentType application/json -Body $body
+        }

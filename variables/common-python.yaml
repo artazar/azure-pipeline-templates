@@ -1,0 +1,3 @@
+variables:
+  - name: pythonVersion
+    value: '3.9'

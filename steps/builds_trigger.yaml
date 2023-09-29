@@ -1,0 +1,36 @@
+parameters:
+- name: buildDefinitionId
+  displayName: The ID of the pipeline obtained from definition URL
+  type: number
+- name: organizationUrl
+  displayName: URL of Azure DevOps organizationUrl
+  type: string
+  default: $(System.TeamFoundationCollectionUri)
+- name: projectName
+  displayName: Azure DevOps project name
+  type: string
+  default: $(System.TeamProject)
+- name: token
+  displayName: Azure DevOps project name
+  type: string
+  default: $(System.AccessToken)
+
+steps:
+  # Note: The task requires "Queue Builds" permissions for the system build user in Azure DevOps
+  - task: PowerShell@2
+    displayName: Trigger build
+    env:
+      AZURE_API_VERSION: 7.0
+      AZURE_ORGANIZATION_URL: ${{ parameters.organizationUrl }}
+      AZURE_PROJECT: ${{ parameters.projectName }}
+      AZURE_TOKEN: ${{ parameters.token }}
+      BUILD_DEFINITION_ID: ${{ parameters.buildDefinitionId }}
+    inputs:
+      targetType: inline
+      script: |
+        $header = @{ Authorization = "Bearer ${env:AZURE_TOKEN}" }
+        $buildsUrl = "${env:AZURE_ORGANIZATION_URL}${env:AZURE_PROJECT}/_apis/build/builds?api-version=${env:AZURE_API_VERSION}"
+        $body = @{ definition = @{ id = "${env:BUILD_DEFINITION_ID}" } } | ConvertTo-Json
+        Write-Host "Trigger build ${env:BUILD_DEFINITION_ID}"
+        Write-Host "POST $buildsUrl"
+        Invoke-RestMethod -Uri $buildsUrl -Method Post -Header $header -ContentType application/json -Body $body

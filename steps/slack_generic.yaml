@@ -1,0 +1,42 @@
+parameters:
+  - name: urlSuffix
+    type: string
+  - name: header
+    displayName: header
+    type: string
+  - name: message
+    displayName: message
+    type: string
+
+steps:
+  - task: InvokeRESTAPI@1
+    displayName: Send release notification to Slack
+    inputs:
+      connectionType: 'connectedServiceName'
+      serviceConnection: 'Slack'
+      method: 'POST'
+      body: |
+        {
+          "text": "${{ parameters.header }}",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "${{ parameters.header }}"
+              }
+            },
+            {
+              "type": "divider"
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "${{ parameters.message }}"
+              }
+            }
+          ]
+        }
+      urlSuffix: ${{ parameters.urlSuffix }}
+      waitForCompletion: 'false'

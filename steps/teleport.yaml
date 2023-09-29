@@ -1,0 +1,72 @@
+parameters:
+  - name: teleportVersion
+    type: string
+    default: 'v11.0.3'
+  - name: teleportAuthServer
+    type: string
+  - name: teleportToken
+    type: string
+  - name: teleportApp
+    type: string
+
+steps:
+  - task: Bash@3
+    displayName: Install Teleport
+    inputs:
+      targetType: 'inline'
+      script: |
+        curl https://get.gravitational.com/teleport-${TELEPORT_VERSION}-linux-amd64-bin.tar.gz.sha256
+        curl -O https://get.gravitational.com/teleport-${TELEPORT_VERSION}-linux-amd64-bin.tar.gz
+        shasum -a 256 teleport-${TELEPORT_VERSION}-linux-amd64-bin.tar.gz
+        tar -xzf teleport-${TELEPORT_VERSION}-linux-amd64-bin.tar.gz
+        cd teleport
+        ./install
+    env:
+      TELEPORT_VERSION: ${{ parameters.teleportVersion }}
+
+  - task: Bash@3
+    displayName: Write tbot config
+    inputs:
+      script: |
+        cat > tbot.yaml << EOF
+        auth_server: ${AUTH_SERVER}
+        oneshot: true
+        storage:
+          directory: /opt/machine-id-data
+        destinations:
+          - directory: /opt/machine-id
+            app: ${APP}
+        EOF
+    env:
+      AUTH_SERVER: ${{ parameters.teleportAuthServer }}
+      APP: ${{ parameters.teleportApp }}
+
+  - task: Bash@3
+    displayName: Init teleport
+    inputs:
+      script: |
+        tbot start
+        -c tbot.yaml
+        --join-method=token
+        --token=${TOKEN}
+    env:
+      TOKEN: ${{ parameters.teleportToken }}
+
+  - task: Bash@3
+    displayName: Check files
+    inputs:
+      script: |
+        find /opt/machine-id
+        find /opt/machine-id-data
+
+  - task: Bash@3
+    displayName: Write curlrc
+    inputs:
+      script: |
+        cat ~/.curlrc || true
+        cat > ~/.curlrc << 'EOF'
+        --verbose
+        --cert /opt/machine-id/tlscert
+        --key /opt/machine-id/key
+        EOF
+        cat ~/.curlrc || true

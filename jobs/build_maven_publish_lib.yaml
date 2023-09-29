@@ -1,0 +1,72 @@
+parameters:
+  - name: projectSubdirectory
+    type: string
+  - name: javaVersion
+    type: string
+
+jobs:
+  - job: Maven
+    displayName: Build Java application
+    pool:
+      vmImage: ubuntu-latest
+    container: maven:3.8.7-eclipse-temurin-11-focal
+    steps:
+      - checkout: self
+        displayName: Checkout Repo
+        fetchDepth: 0
+        persistCredentials: true
+
+      - task: MavenAuthenticate@0
+        inputs:
+          mavenServiceConnections: maven-github
+
+      - task: Cache@2
+        inputs:
+          key: 'maven | "$(Agent.OS)" | **/pom.xml'
+          restoreKeys: |
+            maven | "$(Agent.OS)"
+            maven
+          path: $(MAVEN_CACHE_FOLDER)
+        displayName: Maven - cache dependencies
+
+      # - task: Bash@3
+      #   displayName: Bump the version
+      #   inputs:
+      #     workingDirectory: ${{ parameters.projectSubdirectory }}
+      #     targetType: 'inline'
+      #     script: |
+      #       VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+      #       NEW_VERSION=$(echo ${VERSION} | awk -F. -v OFS=. '{$NF += 1 ; print}')
+      #       mvn versions:set -DnewVersion=${NEW_VERSION}
+
+      - task: Maven@4
+        displayName: Maven - push the library
+        inputs:
+          mavenPomFile: '${{ parameters.projectSubdirectory }}/pom.xml'
+          mavenOptions: '-Xmx3072m $(MAVEN_CACHE_OPTS)'
+          javaHomeOption: 'path'
+          jdkDirectory: '/opt/java/openjdk'
+          publishJUnitResults: false
+          goals: 'deploy'
+
+      - task: Bash@3
+        displayName: Push new version and tag
+        inputs:
+          workingDirectory: ${{ parameters.projectSubdirectory }}
+          targetType: 'inline'
+          script: |
+            set -euxo pipefail
+            # Prepare git config
+            git config --global user.email 'azure-pipelines@example.com'
+            git config --global user.name 'Azure Pipelines'
+            git config --global -l
+            # # Commit files
+            # git add pom.xml
+            # git status
+            # git commit -m "[skip ci] [automated] library version update"
+            # git pull origin ${BUILD_SOURCEBRANCH} --rebase -X theirs
+            # git push origin HEAD:${BUILD_SOURCEBRANCH}
+            # Push repository tag
+            NEW_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+            git tag -a ${NEW_VERSION} -m "Release tag from CI"
+            git push origin ${NEW_VERSION}

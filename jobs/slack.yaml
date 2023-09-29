@@ -1,0 +1,8 @@
+jobs:
+  - job: Slack
+    displayName: Send Slack notification
+    pool: server
+    variables:
+      - group: slack
+    steps:
+      - template: ../steps/slack.yaml@templates

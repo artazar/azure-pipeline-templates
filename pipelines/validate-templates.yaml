@@ -1,0 +1,102 @@
+trigger: none
+
+pr:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - azure-pipelines/**
+
+resources:
+  repositories:
+  # Repository with CI templates
+  - repository: templates
+    type: github
+    name: artazar/azure-pipeline-templates
+    endpoint: github.rw
+
+variables:
+  - name: matrix
+    value: |
+      {
+        "reactApp": {
+          "BUILD_DEFINITION_ID": "68"
+        },
+        "springBootApp": {
+          "BUILD_DEFINITION_ID": "69"
+        }
+      }
+
+stages:
+  - stage: Checks
+    pool:
+      vmImage: ubuntu-latest
+    jobs:
+    - job: CheckBuilds
+      strategy:
+        matrix: $[ variables.matrix ]
+        maxParallel: 1
+      steps:
+        - checkout: templates
+        - task: UsePythonVersion@0
+          inputs:
+            versionSpec: '3.x'
+        - task: Bash@3
+          displayName: Prepare environment
+          inputs:
+            targetType: 'inline'
+            workingDirectory: ./scripts
+            script: pip install -r requirements.txt
+        - task: Bash@3
+          displayName: Prepare params.json
+          inputs:
+            targetType: 'inline'
+            workingDirectory: ./scripts
+            script: |
+              cat > params.json <<EOF
+              {
+                  "resources": {
+                      "repositories": {
+                          "templates": {
+                              "refName": "${BRANCH}",
+                              "version": ""
+                          }
+                      }
+                  }
+              }
+              EOF
+              cat params.json
+          env:
+            BRANCH: $(System.PullRequest.SourceBranch)
+        - task: Bash@3
+          displayName: Preview YAML
+          inputs:
+            targetType: 'inline'
+            workingDirectory: ./scripts
+            script: python previewBuildYaml.py
+          env:
+            ORGANIZATION_URL: $(System.CollectionUri)
+            PROJECT_NAME: $(System.TeamProject)
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        - task: Bash@3
+          displayName: Run PR build
+          inputs:
+            targetType: 'inline'
+            workingDirectory: ./scripts
+            script: python runAndWaitForBuildCompletionReasonPR.py
+          env:
+            ORGANIZATION_URL: $(System.CollectionUri)
+            PROJECT_NAME: $(System.TeamProject)
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            SOURCE_BRANCH: $(System.PullRequest.SourceBranch)
+        - task: Bash@3
+          displayName: Run build
+          inputs:
+            targetType: 'inline'
+            workingDirectory: ./scripts
+            script: python runAndWaitForBuildCompletionCustomParameters.py
+          env:
+            ORGANIZATION_URL: $(System.CollectionUri)
+            PROJECT_NAME: $(System.TeamProject)
+            SYSTEM_ACCESSTOKEN: $(System.AccessToken)

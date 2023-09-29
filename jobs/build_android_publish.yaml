@@ -1,0 +1,151 @@
+parameters:
+  - name: rubyVersion
+    type: string
+  - name: jdkVersion
+    type: string
+  - name: bundlePath
+    type: string
+  - name: fastlanePath
+    type: string
+  - name: agentToolsDirectory
+    type: string
+  - name: projectSubdirectory
+    type: string
+  - name: githubId
+    type: string
+  - name: githubPackagesToken
+    type: string
+  - name: googlePackageName
+    type: string
+  - name: googlePackageTrack
+    type: string
+  - name: googlePackageReleaseStatus
+    type: string
+  - name: containerRegistry
+    type: string
+  - name: signingKeystore
+    type: string
+  - name: signingKeyAlias
+    type: string
+  - name: runID
+    type: string
+  - name: gradleBuildTasks
+    type: string
+  - name: minioBucket
+    type: string
+  - name: minioPublicBucket
+    type: string
+  - name: uploadFileS3Path
+    type: string
+  - name: secureFileName
+    type: string
+  - name: signingKeyPassword
+    type: string
+  - name: signingStorePassword
+    type: string
+  - name: s3Url
+    type: string
+  - name: s3PublicUrl
+    type: string
+  - name: s3AccessKey
+    type: string
+  - name: s3SecretKey
+    type: string
+  - name: s3Upload
+    type: boolean
+
+jobs:
+  - job: Android
+    displayName: Build Android application
+    pool: demo-build
+    steps:
+      - template: ../steps/repo_checkout.yaml@templates
+        parameters:
+          templates: true
+          persist_credentials: true
+          submodules: true
+          fetchDepth: 1
+
+      - template: ../steps/short_sha.yaml@templates
+
+      - template: ../steps/fastlane_init.yaml@templates
+        parameters:
+          rubyVersion: ${{ parameters.rubyVersion }}
+          bundlePath: ${{ parameters.bundlePath }}
+          fastlanePath: ${{ parameters.fastlanePath }}
+          agentToolsDirectory: $(agentToolsDirectory)
+
+      - template: ../steps/google_credentials_setup.yaml@templates
+        parameters:
+          secureFileName: ${{ parameters.secureFileName }}
+
+      - template: ../steps/fastlane_android_build_deploy.yaml@templates
+        parameters:
+          projectSubdirectory: ${{ parameters.projectSubdirectory }}
+          fastlanePath: ${{ parameters.fastlanePath }}
+          bundlePath: ${{ parameters.bundlePath }}
+          jdkVersion: '${{ parameters.jdkVersion }}'
+          githubId: ${{ parameters.githubId }}
+          githubPackagesToken: ${{ parameters.githubPackagesToken }}
+          googlePackageName: ${{ parameters.googlePackageName }}
+          googlePackageTrack: ${{ parameters.googlePackageTrack }}
+          gradleBuildTasks: ${{ parameters.gradleBuildTasks }}
+          signingKeyAlias: ${{ parameters.signingKeyAlias }}
+          signingStorePassword: ${{ parameters.signingStorePassword }}
+          signingKeyPassword: ${{ parameters.signingKeyPassword }}
+
+      ### Post-build actions
+      - ${{ if eq(parameters.s3Upload, 'true') }}:
+        - task: Bash@3
+          displayName: Unpack apk
+          inputs:
+            workingDirectory: ${{ parameters.projectSubdirectory }}
+            targetType: 'inline'
+            script: |
+              wget -q https://github.com/google/bundletool/releases/download/1.15.2/bundletool-all-1.15.2.jar -O ~/bundletool.jar
+              ls ./app/build/outputs/bundle/*/*.aab
+              mv ./app/build/outputs/bundle/*/*.aab .
+              APK_NAME=$(ls *.aab|head -1)
+              java -jar ~/bundletool.jar build-apks \
+                --mode=universal \
+                --bundle=./${APK_NAME} \
+                --output=./app.apks \
+                --ks=./${SIGNING_KEYSTORE} \
+                --ks-pass=pass:${SIGNING_STORE_PASSWORD} \
+                --ks-key-alias=${SIGNING_KEY_ALIAS} \
+                --key-pass=pass:${SIGNING_KEY_PASSWORD}
+              mv app.apks app.zip
+              unzip app.zip
+              mv universal.apk ${FILE_NAME}
+          env:
+            SIGNING_KEYSTORE: '${{ parameters.signingKeystore }}'
+            SIGNING_KEY_ALIAS: ${{ parameters.signingKeyAlias }}
+            SIGNING_STORE_PASSWORD: ${{ parameters.signingStorePassword }}
+            SIGNING_KEY_PASSWORD: ${{ parameters.signingKeyPassword }}
+            FILE_NAME: ${{ parameters.googlePackageName }}.${{ parameters.runID }}.apk
+
+        - template: ../steps/minio_config.yaml@templates
+          parameters:
+            projectSubdirectory: ${{ parameters.projectSubdirectory }}
+            s3Url: ${{ parameters.s3Url }}
+            s3AccessKey: ${{ parameters.s3AccessKey }}
+            s3SecretKey: ${{ parameters.s3SecretKey }}
+
+        - template: ../steps/minio_upload.yaml@templates
+          parameters:
+            projectSubdirectory: ${{ parameters.projectSubdirectory }}
+            s3Url: ${{ parameters.s3Url }}
+            minioBucket: ${{ parameters.minioBucket }}
+            uploadFileS3Path: ${{ parameters.uploadFileS3Path }}
+            fileName: ${{ parameters.googlePackageName }}.${{ parameters.runID }}.apk
+            packageName: ${{ parameters.googlePackageName }}.apk
+            packageVersion: ${{ parameters.runID }}
+            s3PublicUrl: ${{ parameters.s3PublicUrl }}
+            minioPublicBucket: ${{ parameters.minioPublicBucket }}
+
+        - template: ../steps/minio_share.yaml@templates
+          parameters:
+            projectSubdirectory: ${{ parameters.projectSubdirectory }}
+            minioBucket: ${{ parameters.minioBucket }}
+            uploadFileS3Path: ${{ parameters.uploadFileS3Path }}
+            fileName: ${{ parameters.googlePackageName }}.${{ parameters.runID }}.apk
