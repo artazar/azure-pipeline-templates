@@ -17,7 +17,7 @@ resources:
   - repository: templates
     type: github
     name: artazar/azure-pipeline-templates
-    endpoint: github.rw
+    endpoint: github
 
 extends:
   template: azure-pipelines/pipelines/demo.yaml@templates
