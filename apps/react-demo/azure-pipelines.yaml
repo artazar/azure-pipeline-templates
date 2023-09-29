@@ -1,0 +1,19 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+  # Repository with CI templates
+  - repository: templates
+    type: github
+    name: artazar/azure-pipeline-templates
+    endpoint: github
+    ref: ${{ replace(variables['System.PullRequest.SourceBranch'], 'refs/heads/', '') }}
+
+extends:
+  template: pipelines/nodejs.yaml@templates
+  parameters:
+    baseImage: nginx
+    appGroup: test
+    projectSubdirectory: ./apps/react-demo
+    containerImageName: react-demo
